@@ -2,7 +2,7 @@
 
 Copy-paste script for active fire detections near any point or region in Borneo. Defaults to central Kalimantan (a common peat-fire zone).
 
-Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (geometry mode, date mode, satellite toggle), and click **Run**. See [Satellite preview](#satellite-preview), [Export static image](#export-static-image), or [Export video timelapse](#export-video-timelapse) below.
+Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (geometry mode: point, polygon, or draw; date mode; satellite toggle), and click **Run**. See [Satellite preview](#satellite-preview), [Export static image](#export-static-image), or [Export video timelapse](#export-video-timelapse) below.
 
 ---
 
@@ -74,8 +74,22 @@ Catalog: [MOD09GA](https://developers.google.com/earth-engine/datasets/catalog/M
 
 - **Point mode:** set `GEOMETRY_MODE = 'point'`, edit `LNG`, `LAT`, and `BUFFER_KM`
 - **Polygon mode:** set `GEOMETRY_MODE = 'polygon'`, paste coordinates into `POLYGON_COORDS` (closed ring: first point = last point)
+- **Draw mode:** set `GEOMETRY_MODE = 'draw'`, draw a rectangle or polygon on the map, then paste the imported `geometry` variable into the script
 - Earth Engine uses `[longitude, latitude]` — same order as GeoJSON
-- `geodesic: false` from exported GeoJSON is fine; `ee.Geometry.Polygon` uses geodesic edges by default (acceptable for regional Borneo boxes)
+- `geodesic: false` from the draw tool or exported GeoJSON is valid
+
+### Draw mode workflow
+
+1. Open [code.earthengine.google.com](https://code.earthengine.google.com/)
+2. Click the **geometry tool** (rectangle or polygon) on the map toolbar
+3. Draw your area of interest on the map
+4. Open the **Imports** tab — your shape appears as `geometry`
+5. Click the import to add it to the script (or copy the `ee.Geometry.Polygon(...)` block)
+6. Set `GEOMETRY_MODE = 'draw'`
+7. Paste or replace the `geometry` variable in the **CUSTOMIZE** block
+8. Click **Run**
+
+The draw tool sets the **spatial area** only. Date range still comes from `DATE_MODE` (`START_DATE`/`END_DATE` or `LOOKBACK_DAYS`).
 
 ---
 
@@ -91,7 +105,7 @@ Catalog: [MOD09GA](https://developers.google.com/earth-engine/datasets/catalog/M
 
 ```javascript
 // ========== CUSTOMIZE (only edit this block) ==========
-var GEOMETRY_MODE = 'point'; // 'point' | 'polygon'
+var GEOMETRY_MODE = 'point'; // 'point' | 'polygon' | 'draw'
 
 // Point mode
 var LNG = 113.9;
@@ -107,6 +121,13 @@ var POLYGON_COORDS = [
   [108.8700352386492, -4.172197282145383]
 ];
 
+// Draw mode — paste from Code Editor Imports after drawing on the map
+var geometry = ee.Geometry.Polygon(
+  [[[113.5, -2.5], [114.5, -2.5], [114.5, -1.5], [113.5, -1.5], [113.5, -2.5]]],
+  null,
+  false
+);
+
 var DATE_MODE = 'lookback'; // 'range' | 'lookback'
 
 // Explicit range (DATE_MODE = 'range')
@@ -120,9 +141,11 @@ var INCLUDE_SATELLITE = true; // false = fire-only layers and exports
 // ======================================================
 
 var point = ee.Geometry.Point([LNG, LAT]);
-var aoi = GEOMETRY_MODE === 'polygon'
-  ? ee.Geometry.Polygon([POLYGON_COORDS])
-  : point.buffer(BUFFER_KM * 1000);
+var aoi = GEOMETRY_MODE === 'draw'
+  ? geometry
+  : GEOMETRY_MODE === 'polygon'
+    ? ee.Geometry.Polygon([POLYGON_COORDS])
+    : point.buffer(BUFFER_KM * 1000);
 
 var startDate = DATE_MODE === 'range'
   ? ee.Date(START_DATE)
@@ -218,7 +241,8 @@ print('FIRMS fire pixels (1 km):', firmsCount.get('confidence'));
 print('VIIRS fire pixels (375 m):', viirsCount.get('confidence'));
 
 // --- Map layers ---
-Map.centerObject(aoi, GEOMETRY_MODE === 'polygon' ? 6 : 8);
+var mapZoom = (GEOMETRY_MODE === 'polygon' || GEOMETRY_MODE === 'draw') ? 6 : 8;
+Map.centerObject(aoi, mapZoom);
 Map.addLayer(s2Rgb, {}, 'Sentinel-2 true color', INCLUDE_SATELLITE);
 Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area');
 Map.addLayer(point, {color: 'red'}, 'Point (point mode only)', GEOMETRY_MODE === 'point');
@@ -499,6 +523,7 @@ Official reference: [Exporting Video and Animations](https://developers.google.c
 - **VIIRS archive starts 2023** — use FIRMS for longer historical context.
 - A "fire pixel" is not one fire — it is one satellite grid cell flagged as burning.
 - Cloud cover can hide fires; dry-season haze can also affect detection.
+- **Large drawn rectangles** may hit `maxPixels` limits on export — increase `scale` if Tasks fail.
 
 ---
 
