@@ -1,8 +1,8 @@
 # Borneo — Wildfire Monitoring
 
-Copy-paste script for active fire detections near any point or region in Borneo. Defaults to central Kalimantan (a common peat-fire zone).
+Copy-paste script for active fire detections within any area you draw on the map in Borneo.
 
-Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (geometry mode: point, polygon, or draw; date mode; satellite toggle), and click **Run**. See [Satellite preview](#satellite-preview), [Export static image](#export-static-image), or [Export video timelapse](#export-video-timelapse) below.
+Open [code.earthengine.google.com](https://code.earthengine.google.com), draw your area, paste the imported `geometry` variable, set dates in the **CUSTOMIZE** block, and click **Run**. See [Satellite preview](#satellite-preview), [Export static image](#export-static-image), or [Export video timelapse](#export-video-timelapse) below.
 
 ---
 
@@ -70,26 +70,19 @@ Catalog: [MOD09GA](https://developers.google.com/earth-engine/datasets/catalog/M
 
 ---
 
-## Geometry modes
-
-- **Point mode:** set `GEOMETRY_MODE = 'point'`, edit `LNG`, `LAT`, and `BUFFER_KM`
-- **Polygon mode:** set `GEOMETRY_MODE = 'polygon'`, paste coordinates into `POLYGON_COORDS` (closed ring: first point = last point)
-- **Draw mode:** set `GEOMETRY_MODE = 'draw'`, draw a rectangle or polygon on the map, then paste the imported `geometry` variable into the script
-- Earth Engine uses `[longitude, latitude]` — same order as GeoJSON
-- `geodesic: false` from the draw tool or exported GeoJSON is valid
-
-### Draw mode workflow
+## Draw your analysis area
 
 1. Open [code.earthengine.google.com](https://code.earthengine.google.com/)
 2. Click the **geometry tool** (rectangle or polygon) on the map toolbar
 3. Draw your area of interest on the map
 4. Open the **Imports** tab — your shape appears as `geometry`
 5. Click the import to add it to the script (or copy the `ee.Geometry.Polygon(...)` block)
-6. Set `GEOMETRY_MODE = 'draw'`
-7. Paste or replace the `geometry` variable in the **CUSTOMIZE** block
-8. Click **Run**
+6. Replace the placeholder `geometry` in the **CUSTOMIZE** block
+7. Set dates → click **Run**
 
-The draw tool sets the **spatial area** only. Date range still comes from `DATE_MODE` (`START_DATE`/`END_DATE` or `LOOKBACK_DAYS`).
+Earth Engine uses `[longitude, latitude]`. `geodesic: false` from the draw tool is valid.
+
+The draw tool sets the **spatial area** only. Date range comes from `DATE_MODE` (`START_DATE`/`END_DATE` or `LOOKBACK_DAYS`).
 
 ---
 
@@ -105,23 +98,7 @@ The draw tool sets the **spatial area** only. Date range still comes from `DATE_
 
 ```javascript
 // ========== CUSTOMIZE (only edit this block) ==========
-var GEOMETRY_MODE = 'point'; // 'point' | 'polygon' | 'draw'
-
-// Point mode
-var LNG = 113.9;
-var LAT = -2.2;
-var BUFFER_KM = 50;
-
-// Polygon mode — closed ring, [longitude, latitude] pairs
-var POLYGON_COORDS = [
-  [108.8700352386492, -4.172197282145383],
-  [118.4720860198992, -4.172197282145383],
-  [118.4720860198992,  1.1414179180432524],
-  [108.8700352386492,  1.1414179180432524],
-  [108.8700352386492, -4.172197282145383]
-];
-
-// Draw mode — paste from Code Editor Imports after drawing on the map
+// Paste from Code Editor Imports after drawing on the map
 var geometry = ee.Geometry.Polygon(
   [[[113.5, -2.5], [114.5, -2.5], [114.5, -1.5], [113.5, -1.5], [113.5, -2.5]]],
   null,
@@ -140,12 +117,7 @@ var LOOKBACK_DAYS = 30;
 var INCLUDE_SATELLITE = true; // false = fire-only layers and exports
 // ======================================================
 
-var point = ee.Geometry.Point([LNG, LAT]);
-var aoi = GEOMETRY_MODE === 'draw'
-  ? geometry
-  : GEOMETRY_MODE === 'polygon'
-    ? ee.Geometry.Polygon([POLYGON_COORDS])
-    : point.buffer(BUFFER_KM * 1000);
+var aoi = geometry;
 
 var startDate = DATE_MODE === 'range'
   ? ee.Date(START_DATE)
@@ -233,7 +205,9 @@ var viirsCount = viirsMask.reduceRegion({
 });
 
 print('=== Wildfire summary ===');
-print('Geometry mode:', GEOMETRY_MODE);
+print('Analysis area: drawn polygon');
+print('Drawn area (km²):', geometry.area().divide(1e6));
+print('Drawn bounds:', geometry.bounds());
 print('Date mode:', DATE_MODE);
 print('Date range:', dateLabel);
 print('Satellite background:', INCLUDE_SATELLITE);
@@ -241,11 +215,9 @@ print('FIRMS fire pixels (1 km):', firmsCount.get('confidence'));
 print('VIIRS fire pixels (375 m):', viirsCount.get('confidence'));
 
 // --- Map layers ---
-var mapZoom = (GEOMETRY_MODE === 'polygon' || GEOMETRY_MODE === 'draw') ? 6 : 8;
-Map.centerObject(aoi, mapZoom);
+Map.centerObject(aoi, 6);
 Map.addLayer(s2Rgb, {}, 'Sentinel-2 true color', INCLUDE_SATELLITE);
-Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area');
-Map.addLayer(point, {color: 'red'}, 'Point (point mode only)', GEOMETRY_MODE === 'point');
+Map.addLayer(aoi, {color: 'yellow'}, 'Drawn analysis area');
 
 Map.addLayer(
   firmsMask.selfMask(),
@@ -331,7 +303,7 @@ print('Video preview URL:', firmsFrames.getVideoThumbURL(videoArgs));
 // ui.Thumbnail({image: firmsFrames, params: videoArgs, style: {width: '600px'}})
 ```
 
-**Expected output (Console):** pixel counts for FIRMS and VIIRS, plus **image** and **video** preview URLs when `INCLUDE_SATELLITE = true`. During active fire season near peatlands, counts may be in the hundreds or thousands. During wet season, counts are often zero.
+**Expected output (Console):** drawn area (km²), bounds, pixel counts for FIRMS and VIIRS within your drawn shape, plus **image** and **video** preview URLs when `INCLUDE_SATELLITE = true`. During active fire season near peatlands, counts may be in the hundreds or thousands. During wet season, counts are often zero.
 
 ---
 
@@ -406,12 +378,13 @@ Click the **Image preview URL** in the console to open a PNG before running the 
 
 ### Image export workflow
 
-1. Set `DATE_MODE`, date variables, and `INCLUDE_SATELLITE` in the **CUSTOMIZE** block.
-2. Click **Run** — confirm the map shows Sentinel-2 base + fire overlay (if satellite enabled).
-3. Click the **Image preview URL** in the console to verify the composite.
-4. Open the **Tasks** tab → find `firms_fires_satellite_*` or `firms_fires_*`.
-5. Click **Run** on the image task.
-6. When complete, open Google Drive → `earth_engine_exports` → download the GeoTIFF.
+1. Draw your area on the map and paste `geometry` into the **CUSTOMIZE** block.
+2. Set `DATE_MODE`, date variables, and `INCLUDE_SATELLITE`.
+3. Click **Run** — confirm the map shows Sentinel-2 base + fire overlay (if satellite enabled).
+4. Click the **Image preview URL** in the console to verify the composite.
+5. Open the **Tasks** tab → find `firms_fires_satellite_*` or `firms_fires_*`.
+6. Click **Run** on the image task.
+7. When complete, open Google Drive → `earth_engine_exports` → download the GeoTIFF.
 
 For VIIRS, repeat the same blend pattern using `viirsMask` at `scale: 375`.
 
@@ -496,11 +469,12 @@ print('Video preview URL:', firmsFrames.getVideoThumbURL(videoArgs));
 
 ### Video export workflow
 
-1. Set `DATE_MODE`, date variables, and `INCLUDE_SATELLITE` in the **CUSTOMIZE** block.
-2. Click **Run** — click the **Video preview URL** in the console first.
-3. Open the **Tasks** tab → find `firms_timelapse_*`.
-4. Click **Run** on the video task.
-5. When complete, open Google Drive → `earth_engine_exports` → download the MP4.
+1. Draw your area on the map and paste `geometry` into the **CUSTOMIZE** block.
+2. Set `DATE_MODE`, date variables, and `INCLUDE_SATELLITE`.
+3. Click **Run** — click the **Video preview URL** in the console first.
+4. Open the **Tasks** tab → find `firms_timelapse_*`.
+5. Click **Run** on the video task.
+6. When complete, open Google Drive → `earth_engine_exports` → download the MP4.
 
 For higher quality, increase `scale` or use `dimensions` instead (mutually exclusive with `scale`).
 
