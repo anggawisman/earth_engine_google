@@ -2,7 +2,7 @@
 
 Copy-paste script for active fire detections near any point or region in Borneo. Defaults to central Kalimantan (a common peat-fire zone).
 
-Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (geometry mode, date mode), and click **Run**. See [Export static image](#export-static-image) or [Export video timelapse](#export-video-timelapse) below to download results to Google Drive.
+Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (geometry mode, date mode, satellite toggle), and click **Run**. See [Satellite preview](#satellite-preview), [Export static image](#export-static-image), or [Export video timelapse](#export-video-timelapse) below.
 
 ---
 
@@ -42,6 +42,31 @@ Catalog: [FIRMS](https://developers.google.com/earth-engine/datasets/catalog/FIR
 | Best for | Smaller fires, higher spatial detail |
 
 Catalog: [NASA/LANCE/SNPP_VIIRS/C2](https://developers.google.com/earth-engine/datasets/catalog/NASA_LANCE_SNPP_VIIRS_C2)
+
+### Sentinel-2 SR (satellite background — static image)
+
+| Property | Value |
+|----------|-------|
+| Catalog ID | `COPERNICUS/S2_SR_HARMONIZED` |
+| Type | `ImageCollection` |
+| Bands used | `B4`, `B3`, `B2` (true color) |
+| Resolution | 10 m |
+| Best for | Map base layer and static image export |
+
+Catalog: [Sentinel-2 SR Harmonized](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED)
+
+### MODIS Terra SR (satellite background — video)
+
+| Property | Value |
+|----------|-------|
+| Catalog ID | `MODIS/061/MOD09GA` |
+| Type | `ImageCollection` |
+| Bands used | `sur_refl_b01`, `sur_refl_b04`, `sur_refl_b03` (true color) |
+| Resolution | ~500 m |
+| Update cadence | Daily |
+| Best for | Daily true-color frames in video timelapse |
+
+Catalog: [MOD09GA](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09GA)
 
 ---
 
@@ -90,6 +115,8 @@ var END_DATE   = '2025-09-01';  // exclusive — add 1 day to include last calen
 
 // Relative lookback (DATE_MODE = 'lookback')
 var LOOKBACK_DAYS = 30;
+
+var INCLUDE_SATELLITE = true; // false = fire-only layers and exports
 // ======================================================
 
 var point = ee.Geometry.Point([LNG, LAT]);
@@ -108,6 +135,47 @@ var endDate = DATE_MODE === 'range'
 var dateLabel = DATE_MODE === 'range'
   ? (START_DATE + ' to ' + END_DATE)
   : ('last ' + LOOKBACK_DAYS + ' days');
+
+var exportSuffix = dateLabel.replace(/ /g, '_');
+
+// --- Satellite visualization params ---
+var s2VisParams = {bands: ['B4', 'B3', 'B2'], min: 0, max: 3000};
+var modisVisParams = {
+  bands: ['sur_refl_b01', 'sur_refl_b04', 'sur_refl_b03'],
+  min: 0, max: 3000, gamma: 1.4
+};
+
+function maskS2Clouds(image) {
+  var qa = image.select('QA60');
+  var cloud = 1 << 10;
+  var cirrus = 1 << 11;
+  return image.updateMask(
+    qa.bitwiseAnd(cloud).eq(0).and(qa.bitwiseAnd(cirrus).eq(0))
+  );
+}
+
+var s2Composite = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterBounds(aoi)
+  .filterDate(startDate, endDate)
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+  .map(maskS2Clouds)
+  .median()
+  .clip(aoi);
+
+var s2Rgb = s2Composite.visualize(s2VisParams);
+
+function maskModisClouds(image) {
+  var qa = image.select('state_1km');
+  var cloudBit = 1 << 10;
+  return image.updateMask(qa.bitwiseAnd(cloudBit).eq(0));
+}
+
+var modis = ee.ImageCollection('MODIS/061/MOD09GA')
+  .filterBounds(aoi)
+  .filterDate(startDate, endDate)
+  .map(maskModisClouds);
+
+var modisMedian = modis.median().clip(aoi);
 
 // --- MODIS FIRMS (1 km) ---
 var firms = ee.ImageCollection('FIRMS')
@@ -145,11 +213,13 @@ print('=== Wildfire summary ===');
 print('Geometry mode:', GEOMETRY_MODE);
 print('Date mode:', DATE_MODE);
 print('Date range:', dateLabel);
+print('Satellite background:', INCLUDE_SATELLITE);
 print('FIRMS fire pixels (1 km):', firmsCount.get('confidence'));
 print('VIIRS fire pixels (375 m):', viirsCount.get('confidence'));
 
 // --- Map layers ---
 Map.centerObject(aoi, GEOMETRY_MODE === 'polygon' ? 6 : 8);
+Map.addLayer(s2Rgb, {}, 'Sentinel-2 true color', INCLUDE_SATELLITE);
 Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area');
 Map.addLayer(point, {color: 'red'}, 'Point (point mode only)', GEOMETRY_MODE === 'point');
 
@@ -167,28 +237,52 @@ Map.addLayer(
 );
 
 // --- Export static image (composite of all days) ---
-var firmsComposite = firmsMask.selfMask().clip(aoi);
-var exportSuffix = dateLabel.replace(/ /g, '_');
+var fireVis = firmsMask.selfMask().visualize({
+  palette: ['orange', 'red'],
+  forceRgbOutput: true
+});
+var staticComposite = INCLUDE_SATELLITE
+  ? s2Rgb.blend(fireVis)
+  : fireVis;
+
+print('Image preview URL:', staticComposite.getThumbURL({
+  dimensions: 512,
+  region: aoi,
+  format: 'png'
+}));
 
 Export.image.toDrive({
-  image: firmsComposite,
-  description: 'firms_fires_' + exportSuffix,
+  image: staticComposite,
+  description: (INCLUDE_SATELLITE ? 'firms_fires_satellite_' : 'firms_fires_') + exportSuffix,
   folder: 'earth_engine_exports',
   region: aoi,
-  scale: 1000,
+  scale: INCLUDE_SATELLITE ? 10 : 1000,
   maxPixels: 1e9
 });
 
 // --- Export video timelapse (one frame per day) ---
-function visFirmsFrame(img) {
-  var fire = img.select('confidence').gt(0).selfMask();
-  return fire.visualize({
+function visFirmsFrameWithSatellite(firmsImg) {
+  var fire = firmsImg.select('confidence').gt(0).selfMask();
+  var fireVis = fire.visualize({
     palette: ['orange', 'red'],
     forceRgbOutput: true
   });
+
+  if (!INCLUDE_SATELLITE) {
+    return fireVis;
+  }
+
+  var t = ee.Date(firmsImg.get('system:time_start'));
+  var modisColDay = modis.filterDate(t, t.advance(1, 'day'));
+  var sat = ee.Image(ee.Algorithms.If(
+    modisColDay.size().gt(0),
+    modisColDay.first().visualize(modisVisParams),
+    modisMedian.visualize(modisVisParams)
+  ));
+  return sat.blend(fireVis);
 }
 
-var firmsFrames = firms.map(visFirmsFrame);
+var firmsFrames = firms.map(visFirmsFrameWithSatellite);
 
 Export.video.toDrive({
   collection: firmsFrames,
@@ -206,19 +300,43 @@ var videoArgs = {
   region: aoi,
   framesPerSecond: 2
 };
-print('Preview URL:', firmsFrames.getVideoThumbURL(videoArgs));
+print('Video preview URL:', firmsFrames.getVideoThumbURL(videoArgs));
 
 // Or inline in the Code Editor map panel:
+// ui.Thumbnail({image: staticComposite, params: {dimensions: 512, region: aoi}, style: {width: '600px'}})
 // ui.Thumbnail({image: firmsFrames, params: videoArgs, style: {width: '600px'}})
 ```
 
-**Expected output (Console):** pixel counts for FIRMS and VIIRS within your analysis area (buffer or polygon). During active fire season near peatlands, counts may be in the hundreds or thousands. During wet season, counts are often zero.
+**Expected output (Console):** pixel counts for FIRMS and VIIRS, plus **image** and **video** preview URLs when `INCLUDE_SATELLITE = true`. During active fire season near peatlands, counts may be in the hundreds or thousands. During wet season, counts are often zero.
+
+---
+
+## Satellite preview
+
+Set `INCLUDE_SATELLITE = true` in the **CUSTOMIZE** block to see fires overlaid on satellite imagery — in the map, via browser preview URLs, and in Drive exports.
+
+| Output | Satellite source | What you see |
+|--------|------------------|--------------|
+| Map base layer | Sentinel-2 true color (cloud-masked median) | 10 m context under fire layers |
+| Static image preview + export | Sentinel-2 + FIRMS blend | One PNG/GeoTIFF with fires on satellite |
+| Video preview + export | MODIS daily true color + FIRMS per frame | Daily animation with satellite background |
+
+Set `INCLUDE_SATELLITE = false` to revert to fire-only layers and exports (original behavior).
+
+### Preview URLs (console)
+
+After clicking **Run**, the console prints:
+
+- **Image preview URL** — click to open a PNG of the static composite (Sentinel-2 + fires)
+- **Video preview URL** — click to open an animated preview (MODIS daily + fires)
+
+For inline previews in the Code Editor panel, uncomment the `ui.Thumbnail` lines at the bottom of the script.
 
 ---
 
 ## Export static image
 
-Export a single **GeoTIFF** showing all fire detections across your date range (max composite — same as the orange/red map layer).
+Export a single **GeoTIFF** showing all fire detections across your date range. With `INCLUDE_SATELLITE = true`, fires are blended over a Sentinel-2 true-color composite.
 
 Earth Engine does not download directly to your laptop. The script registers a **batch task** that renders on Google's servers and writes to **Google Drive**.
 
@@ -227,15 +345,26 @@ Earth Engine does not download directly to your laptop. The script registers a *
 Already included at the bottom of the script above:
 
 ```javascript
-var firmsComposite = firmsMask.selfMask().clip(aoi);
-var exportSuffix = dateLabel.replace(/ /g, '_');
+var fireVis = firmsMask.selfMask().visualize({
+  palette: ['orange', 'red'],
+  forceRgbOutput: true
+});
+var staticComposite = INCLUDE_SATELLITE
+  ? s2Rgb.blend(fireVis)
+  : fireVis;
+
+print('Image preview URL:', staticComposite.getThumbURL({
+  dimensions: 512,
+  region: aoi,
+  format: 'png'
+}));
 
 Export.image.toDrive({
-  image: firmsComposite,
-  description: 'firms_fires_' + exportSuffix,
+  image: staticComposite,
+  description: (INCLUDE_SATELLITE ? 'firms_fires_satellite_' : 'firms_fires_') + exportSuffix,
   folder: 'earth_engine_exports',
   region: aoi,
-  scale: 1000,
+  scale: INCLUDE_SATELLITE ? 10 : 1000,
   maxPixels: 1e9
 });
 ```
@@ -243,48 +372,68 @@ Export.image.toDrive({
 | Property | Value |
 |----------|-------|
 | Method | `Export.image.toDrive` |
-| File type | GeoTIFF |
-| Resolution | 1000 m (matches FIRMS) |
+| File type | GeoTIFF (RGB when satellite enabled) |
+| Resolution | 10 m (satellite) or 1000 m (fire-only) |
 | Output folder | `earth_engine_exports` on Google Drive |
+
+### Image preview
+
+Click the **Image preview URL** in the console to open a PNG before running the Drive export. No task needed — Earth Engine renders on-the-fly in your browser.
 
 ### Image export workflow
 
-1. Set `DATE_MODE` and the corresponding date variables in the **CUSTOMIZE** block.
-2. Click **Run** — confirm the FIRMS layer on the map looks correct.
-3. Open the **Tasks** tab → find `firms_fires_*`.
-4. Click **Run** on the image task.
-5. When complete, open Google Drive → `earth_engine_exports` → download the GeoTIFF.
+1. Set `DATE_MODE`, date variables, and `INCLUDE_SATELLITE` in the **CUSTOMIZE** block.
+2. Click **Run** — confirm the map shows Sentinel-2 base + fire overlay (if satellite enabled).
+3. Click the **Image preview URL** in the console to verify the composite.
+4. Open the **Tasks** tab → find `firms_fires_satellite_*` or `firms_fires_*`.
+5. Click **Run** on the image task.
+6. When complete, open Google Drive → `earth_engine_exports` → download the GeoTIFF.
 
-For VIIRS, repeat the same pattern using `viirsMask` at `scale: 375`.
+For VIIRS, repeat the same blend pattern using `viirsMask` at `scale: 375`.
 
 ### Image export limitations
 
-- **Large polygons** may hit `maxPixels` limits — increase `scale` (e.g. 2000 m) or simplify geometry.
+- **Large polygons** may hit `maxPixels` limits — increase `scale` (e.g. 100 instead of 10) or simplify geometry.
+- **S2 median may look hazy** during dry-season smoke in Borneo — expected.
+- **S2 export at 10 m** over large AOIs may timeout — use `scale: 100` for regional polygons.
 - **`filterDate` end is exclusive** in range mode — add one day to `END_DATE` to include the last calendar day.
 - Export is async — check the Tasks tab for completion status.
 
-Official reference: [Exporting Images](https://developers.google.com/earth-engine/guides/exporting_images)
+Official reference: [Exporting Images](https://developers.google.com/earth-engine/guides/exporting_images), [Image Visualization](https://developers.google.com/earth-engine/guides/image_visualization)
 
 ---
 
 ## Export video timelapse
 
-Export an **MP4** with one frame per daily FIRMS image, animated over your date range.
+Export an **MP4** with one frame per daily FIRMS image. With `INCLUDE_SATELLITE = true`, each frame blends fires over MODIS daily true color (fallback to median when a day is fully cloudy).
 
 ### Video export code
 
 Already included at the bottom of the script above:
 
 ```javascript
-function visFirmsFrame(img) {
-  var fire = img.select('confidence').gt(0).selfMask();
-  return fire.visualize({
+function visFirmsFrameWithSatellite(firmsImg) {
+  var fire = firmsImg.select('confidence').gt(0).selfMask();
+  var fireVis = fire.visualize({
     palette: ['orange', 'red'],
     forceRgbOutput: true
   });
+
+  if (!INCLUDE_SATELLITE) {
+    return fireVis;
+  }
+
+  var t = ee.Date(firmsImg.get('system:time_start'));
+  var modisColDay = modis.filterDate(t, t.advance(1, 'day'));
+  var sat = ee.Image(ee.Algorithms.If(
+    modisColDay.size().gt(0),
+    modisColDay.first().visualize(modisVisParams),
+    modisMedian.visualize(modisVisParams)
+  ));
+  return sat.blend(fireVis);
 }
 
-var firmsFrames = firms.map(visFirmsFrame);
+var firmsFrames = firms.map(visFirmsFrameWithSatellite);
 
 Export.video.toDrive({
   collection: firmsFrames,
@@ -301,13 +450,13 @@ Export.video.toDrive({
 |----------|-------|
 | Method | `Export.video.toDrive` |
 | File type | MP4 |
-| Frames | One per daily FIRMS image |
+| Frames | One per daily FIRMS image (+ MODIS background when enabled) |
 | Framerate | 2 fps (adjust `framesPerSecond`) |
 | Output folder | `earth_engine_exports` on Google Drive |
 
-### Quick preview (no Drive export)
+### Video preview (no Drive export)
 
-Before running the full export, preview the animation in your browser:
+Before running the full export, click the **Video preview URL** in the console:
 
 ```javascript
 var videoArgs = {
@@ -315,18 +464,16 @@ var videoArgs = {
   region: aoi,
   framesPerSecond: 2
 };
-print('Preview URL:', firmsFrames.getVideoThumbURL(videoArgs));
+print('Video preview URL:', firmsFrames.getVideoThumbURL(videoArgs));
 
 // Or inline in the Code Editor map panel:
 // ui.Thumbnail({image: firmsFrames, params: videoArgs, style: {width: '600px'}})
 ```
 
-Click the preview URL in the console, or right-click the thumbnail to save.
-
 ### Video export workflow
 
-1. Set `DATE_MODE` and the corresponding date variables in the **CUSTOMIZE** block.
-2. Click **Run** — check the preview URL in the console first.
+1. Set `DATE_MODE`, date variables, and `INCLUDE_SATELLITE` in the **CUSTOMIZE** block.
+2. Click **Run** — click the **Video preview URL** in the console first.
 3. Open the **Tasks** tab → find `firms_timelapse_*`.
 4. Click **Run** on the video task.
 5. When complete, open Google Drive → `earth_engine_exports` → download the MP4.
@@ -337,10 +484,12 @@ For higher quality, increase `scale` or use `dimensions` instead (mutually exclu
 
 - **RGB 8-bit required** — raw single-band images cannot export as video; the script uses `.visualize({ forceRgbOutput: true })`.
 - **`maxFrames` caps length** — default limit is 1000; the script sets 300. Raise for longer ranges or split into multiple exports.
+- **MODIS ~500 m** — fires at 1 km (FIRMS) may not align pixel-perfect with satellite.
+- **Cloudy days** — frames without clear MODIS use the median composite as fallback (static background for that day).
 - **FIRMS = 1 km grid** — timelapse shows daily snapshots, not continuous flames.
 - **Export is async** — video tasks can take minutes; use `getVideoThumbURL` for a quick preview first.
 
-Official reference: [Exporting Video and Animations](https://developers.google.com/earth-engine/guides/exporting_video)
+Official reference: [Exporting Video and Animations](https://developers.google.com/earth-engine/guides/exporting_video), [MOD09GA catalog](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD09GA)
 
 ---
 
