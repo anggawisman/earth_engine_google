@@ -1,8 +1,8 @@
 # Borneo — Wildfire Monitoring
 
-Copy-paste script for active fire detections near any point in Borneo. Defaults to central Kalimantan (a common peat-fire zone).
+Copy-paste script for active fire detections near any point or region in Borneo. Defaults to central Kalimantan (a common peat-fire zone).
 
-Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block, and click **Run**.
+Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (point or polygon), and click **Run**.
 
 ---
 
@@ -45,18 +45,42 @@ Catalog: [NASA/LANCE/SNPP_VIIRS/C2](https://developers.google.com/earth-engine/d
 
 ---
 
+## Geometry modes
+
+- **Point mode:** set `GEOMETRY_MODE = 'point'`, edit `LNG`, `LAT`, and `BUFFER_KM`
+- **Polygon mode:** set `GEOMETRY_MODE = 'polygon'`, paste coordinates into `POLYGON_COORDS` (closed ring: first point = last point)
+- Earth Engine uses `[longitude, latitude]` — same order as GeoJSON
+- `geodesic: false` from exported GeoJSON is fine; `ee.Geometry.Polygon` uses geodesic edges by default (acceptable for regional Borneo boxes)
+
+---
+
 ## Code Editor
 
 ```javascript
 // ========== CUSTOMIZE (only edit this block) ==========
-var LNG = 113.9;      // longitude — Earth Engine uses [lng, lat]
-var LAT = -2.2;       // latitude
-var BUFFER_KM = 50;   // analysis radius around the point
+var GEOMETRY_MODE = 'point'; // 'point' | 'polygon'
+
+// Point mode
+var LNG = 113.9;
+var LAT = -2.2;
+var BUFFER_KM = 50;
+
+// Polygon mode — closed ring, [longitude, latitude] pairs
+var POLYGON_COORDS = [
+  [108.8700352386492, -4.172197282145383],
+  [118.4720860198992, -4.172197282145383],
+  [118.4720860198992,  1.1414179180432524],
+  [108.8700352386492,  1.1414179180432524],
+  [108.8700352386492, -4.172197282145383]
+];
+
 var LOOKBACK_DAYS = 30;
 // ======================================================
 
 var point = ee.Geometry.Point([LNG, LAT]);
-var aoi = point.buffer(BUFFER_KM * 1000);
+var aoi = GEOMETRY_MODE === 'polygon'
+  ? ee.Geometry.Polygon([POLYGON_COORDS])
+  : point.buffer(BUFFER_KM * 1000);
 
 var endDate = ee.Date(Date.now());
 var startDate = endDate.advance(-LOOKBACK_DAYS, 'day');
@@ -94,15 +118,15 @@ var viirsCount = viirsMask.reduceRegion({
 });
 
 print('=== Wildfire summary ===');
+print('Geometry mode:', GEOMETRY_MODE);
 print('Lookback days:', LOOKBACK_DAYS);
-print('Buffer radius (km):', BUFFER_KM);
 print('FIRMS fire pixels (1 km):', firmsCount.get('confidence'));
 print('VIIRS fire pixels (375 m):', viirsCount.get('confidence'));
 
 // --- Map layers ---
-Map.centerObject(point, 8);
-Map.addLayer(point, {color: 'red'}, 'Your point');
-Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area', false);
+Map.centerObject(aoi, GEOMETRY_MODE === 'polygon' ? 6 : 8);
+Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area');
+Map.addLayer(point, {color: 'red'}, 'Point (point mode only)', GEOMETRY_MODE === 'point');
 
 Map.addLayer(
   firmsMask.selfMask(),
@@ -118,7 +142,7 @@ Map.addLayer(
 );
 ```
 
-**Expected output (Console):** pixel counts for FIRMS and VIIRS within your buffer. During active fire season near peatlands, counts may be in the hundreds or thousands. During wet season, counts are often zero.
+**Expected output (Console):** pixel counts for FIRMS and VIIRS within your analysis area (buffer or polygon). During active fire season near peatlands, counts may be in the hundreds or thousands. During wet season, counts are often zero.
 
 ---
 
@@ -128,11 +152,12 @@ Map.addLayer(
 - **VIIRS archive starts 2023** — use FIRMS for longer historical context.
 - A "fire pixel" is not one fire — it is one satellite grid cell flagged as burning.
 - Cloud cover can hide fires; dry-season haze can also affect detection.
-- Increase `LOOKBACK_DAYS` or `BUFFER_KM` to widen the search area.
+- **Large polygons** may hit `maxPixels` limits — increase `scale` or simplify geometry if the script errors.
+- Increase `LOOKBACK_DAYS` or widen the analysis area to expand the search.
 
 ---
 
 ## What's next
 
-- [Deforestation](./05-borneo-deforestation.md) — forest loss near the same coordinates
+- [Deforestation](./05-borneo-deforestation.md) — forest loss near the same area
 - [Weather](./09-borneo-weather.md) — forecast precipitation and wind (dry/wet season context)

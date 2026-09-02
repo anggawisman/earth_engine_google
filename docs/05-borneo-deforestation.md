@@ -1,8 +1,8 @@
 # Borneo — Deforestation Monitoring
 
-Copy-paste script for forest cover and loss near any point in Borneo. Uses Hansen Global Forest Change (annual) and GLAD alerts (near real-time).
+Copy-paste script for forest cover and loss near any point or region in Borneo. Uses Hansen Global Forest Change (annual) and GLAD alerts (near real-time).
 
-Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block, and click **Run**.
+Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (point or polygon), and click **Run**.
 
 ---
 
@@ -10,8 +10,8 @@ Open [code.earthengine.google.com](https://code.earthengine.google.com), paste t
 
 Borneo has experienced large-scale forest conversion for palm oil, logging, and mining. This script reports:
 
-1. **Tree cover %** at your point (year 2000 baseline)
-2. **Forest loss area** within your buffer since 2000 (Hansen)
+1. **Tree cover %** at your point or regional mean (year 2000 baseline)
+2. **Forest loss area** within your analysis area since 2000 (Hansen)
 3. **Recent GLAD alert pixels** — near-real-time disturbance detections
 
 ---
@@ -46,18 +46,47 @@ Reference: [GLAD Forest Alerts](https://glad.geog.umd.edu/index.php/dataset/glad
 
 ---
 
+## Geometry modes
+
+- **Point mode:** set `GEOMETRY_MODE = 'point'`, edit `LNG`, `LAT`, and `BUFFER_KM`
+- **Polygon mode:** set `GEOMETRY_MODE = 'polygon'`, paste coordinates into `POLYGON_COORDS` (closed ring: first point = last point)
+- Earth Engine uses `[longitude, latitude]` — same order as GeoJSON
+- Tree cover uses the point value in point mode, or **regional mean** over the polygon in polygon mode
+
+---
+
 ## Code Editor
 
 ```javascript
 // ========== CUSTOMIZE (only edit this block) ==========
-var LNG = 113.9;      // longitude — Earth Engine uses [lng, lat]
-var LAT = -2.2;       // latitude
-var BUFFER_KM = 50;   // analysis radius around the point
+var GEOMETRY_MODE = 'point'; // 'point' | 'polygon'
+
+// Point mode
+var LNG = 113.9;
+var LAT = -2.2;
+var BUFFER_KM = 50;
+
+// Polygon mode — closed ring, [longitude, latitude] pairs
+var POLYGON_COORDS = [
+  [108.8700352386492, -4.172197282145383],
+  [118.4720860198992, -4.172197282145383],
+  [118.4720860198992,  1.1414179180432524],
+  [108.8700352386492,  1.1414179180432524],
+  [108.8700352386492, -4.172197282145383]
+];
+
 var GLAD_CONF_BAND = 'conf26';  // update yearly: conf24, conf25, conf26, etc.
 // ======================================================
 
 var point = ee.Geometry.Point([LNG, LAT]);
-var aoi = point.buffer(BUFFER_KM * 1000);
+var aoi = GEOMETRY_MODE === 'polygon'
+  ? ee.Geometry.Polygon([POLYGON_COORDS])
+  : point.buffer(BUFFER_KM * 1000);
+
+var sampleGeom = GEOMETRY_MODE === 'polygon' ? aoi : point;
+var sampleReducer = GEOMETRY_MODE === 'polygon'
+  ? ee.Reducer.mean()
+  : ee.Reducer.first();
 
 // --- Hansen Global Forest Change ---
 var hansen = ee.Image('UMD/hansen/global_forest_change_2025_v1_13');
@@ -65,10 +94,11 @@ var treeCover = hansen.select('treecover2000');
 var loss = hansen.select('loss');
 var pixelArea = ee.Image.pixelArea();
 
-var treeCoverAtPoint = treeCover.reduceRegion({
-  reducer: ee.Reducer.first(),
-  geometry: point,
-  scale: 30
+var treeCoverStats = treeCover.reduceRegion({
+  reducer: sampleReducer,
+  geometry: sampleGeom,
+  scale: 30,
+  maxPixels: 1e10
 });
 
 var lossAreaM2 = loss.multiply(pixelArea).reduceRegion({
@@ -95,15 +125,17 @@ var gladCount = gladMask.reduceRegion({
 });
 
 print('=== Deforestation summary ===');
-print('Tree cover at point (%, year 2000):', treeCoverAtPoint.get('treecover2000'));
+print('Geometry mode:', GEOMETRY_MODE);
+print('Tree cover (%, year 2000, point or regional mean):',
+      treeCoverStats.get('treecover2000'));
 print('Forest loss area since 2000 (ha):', lossHa);
-print('GLAD alert pixels in buffer:', gladCount.get(GLAD_CONF_BAND));
+print('GLAD alert pixels in area:', gladCount.get(GLAD_CONF_BAND));
 print('GLAD band used:', GLAD_CONF_BAND);
 
 // --- Map layers ---
-Map.centerObject(point, 9);
-Map.addLayer(point, {color: 'red'}, 'Your point');
-Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area', false);
+Map.centerObject(aoi, GEOMETRY_MODE === 'polygon' ? 6 : 9);
+Map.addLayer(aoi, {color: 'yellow'}, 'Analysis area');
+Map.addLayer(point, {color: 'red'}, 'Point (point mode only)', GEOMETRY_MODE === 'point');
 
 Map.addLayer(
   treeCover,
@@ -129,7 +161,7 @@ Map.addLayer(
 **Expected output (Console):**
 
 - `treecover2000`: 0–100 (dense forest often 60–90+ in interior Borneo; cleared land near 0)
-- `Forest loss area`: hectares lost within buffer since 2000
+- `Forest loss area`: hectares lost within analysis area since 2000
 - `GLAD alert pixels`: count of recent disturbance pixels (0 if none detected)
 
 ---
@@ -140,6 +172,7 @@ Map.addLayer(
 - **GLAD confidence bands change yearly** — update `GLAD_CONF_BAND` (e.g. `conf24`, `conf25`) when UMD rotates bands.
 - **30 m resolution** misses very small clearings and may confuse cloud/shadow with loss.
 - **Tree cover 2000** is the baseline; it does not show current cover directly (use loss + baseline to infer).
+- **Large polygons** may hit `maxPixels` limits — increase `scale` or simplify geometry if the script errors.
 - Plantation conversion may show as forest loss even when land remains vegetated (oil palm).
 
 ---

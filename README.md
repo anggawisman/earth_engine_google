@@ -26,6 +26,8 @@ node docs/examples/climate-era5.js
 
 ### Borneo Monitoring (Code Editor)
 
+Each guide supports **point + buffer** or **polygon coordinates** via `GEOMETRY_MODE`.
+
 | Guide | Topic |
 |-------|-------|
 | [04 — Wildfire](docs/04-borneo-wildfire.md) | FIRMS + VIIRS fire detections |
@@ -33,7 +35,7 @@ node docs/examples/climate-era5.js
 | [06 — Tectonic & Volcanic](docs/06-borneo-tectonic-volcanic.md) | Earthquakes + thermal hotspots |
 | [07 — Climate Change](docs/07-borneo-climate-change.md) | Decadal temperature comparison |
 | [08 — CO2 & Carbon](docs/08-borneo-co2.md) | GPP + combustion proxy |
-| [09 — Weather](docs/09-borneo-weather.md) | GFS forecast at a point |
+| [09 — Weather](docs/09-borneo-weather.md) | GFS forecast (point or regional mean) |
 
 ## Example Scripts
 

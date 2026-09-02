@@ -35,7 +35,7 @@ GEE_SERVICE_ACCOUNT_KEY_PATH=./credentials/service-account-key.json
 
 ## Borneo Monitoring (Code Editor)
 
-Copy-paste scripts for Borneo — change only longitude/latitude in each **CUSTOMIZE** block. Recommended order for immediate hazards first, then longer trends:
+Copy-paste scripts for Borneo — change only the **CUSTOMIZE** block in each guide (**point + buffer** or **polygon coordinates** via `GEOMETRY_MODE`). Recommended order for immediate hazards first, then longer trends:
 
 | Doc | Topic |
 |-----|-------|

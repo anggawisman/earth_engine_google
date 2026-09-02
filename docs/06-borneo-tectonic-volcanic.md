@@ -1,8 +1,8 @@
 # Borneo — Tectonic & Volcanic Activity
 
-Copy-paste script for earthquake history and thermal hotspots near any point in Borneo.
+Copy-paste script for earthquake history and thermal hotspots near any point or region in Borneo.
 
-Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block, and click **Run**.
+Open [code.earthengine.google.com](https://code.earthengine.google.com), paste the script below, change only the **CUSTOMIZE** block (point or polygon), and click **Run**.
 
 ---
 
@@ -10,10 +10,10 @@ Open [code.earthengine.google.com](https://code.earthengine.google.com), paste t
 
 Borneo sits on the Sunda Plate with lower seismicity than the Ring of Fire (Sulawesi, Philippines, Java). Still, earthquakes occur in Sabah, Kalimantan, and offshore. This script checks:
 
-1. **USGS earthquakes** — events within your buffer (magnitude and date filtered)
+1. **USGS earthquakes** — events within your analysis area (magnitude and date filtered)
 2. **VIIRS thermal hotspots** — possible volcanic or industrial heat sources (last 30 days)
 
-Nearest known volcanoes in Borneo are limited (e.g. Bombalai in Sabah); most thermal pixels near your point are more likely fires or industry than volcanoes.
+Nearest known volcanoes in Borneo are limited (e.g. Bombalai in Sabah); most thermal pixels are more likely fires or industry than volcanoes.
 
 ---
 
@@ -46,20 +46,45 @@ Catalog: [NASA/LANCE/SNPP_VIIRS/C2](https://developers.google.com/earth-engine/d
 
 ---
 
+## Geometry modes
+
+- **Point mode:** set `GEOMETRY_MODE = 'point'`, edit `LNG`, `LAT`, and `BUFFER_KM`
+- **Polygon mode:** set `GEOMETRY_MODE = 'polygon'`, paste coordinates into `POLYGON_COORDS` (closed ring: first point = last point)
+- Nearest-earthquake distance is measured from the polygon **centroid** in polygon mode
+
+---
+
 ## Code Editor
 
 ```javascript
 // ========== CUSTOMIZE (only edit this block) ==========
-var LNG = 113.9;      // longitude — Earth Engine uses [lng, lat]
-var LAT = -2.2;       // latitude
+var GEOMETRY_MODE = 'point'; // 'point' | 'polygon'
+
+// Point mode
+var LNG = 113.9;
+var LAT = -2.2;
 var BUFFER_KM = 200;  // wider buffer helps find regional earthquakes
+
+// Polygon mode — closed ring, [longitude, latitude] pairs
+var POLYGON_COORDS = [
+  [108.8700352386492, -4.172197282145383],
+  [118.4720860198992, -4.172197282145383],
+  [118.4720860198992,  1.1414179180432524],
+  [108.8700352386492,  1.1414179180432524],
+  [108.8700352386492, -4.172197282145383]
+];
+
 var MIN_MAGNITUDE = 4.5;
 var LOOKBACK_YEARS = 10;
 var THERMAL_LOOKBACK_DAYS = 30;
 // ======================================================
 
 var point = ee.Geometry.Point([LNG, LAT]);
-var aoi = point.buffer(BUFFER_KM * 1000);
+var aoi = GEOMETRY_MODE === 'polygon'
+  ? ee.Geometry.Polygon([POLYGON_COORDS])
+  : point.buffer(BUFFER_KM * 1000);
+
+var refPoint = GEOMETRY_MODE === 'polygon' ? aoi.centroid() : point;
 
 var startDate = ee.Date(Date.now()).advance(-LOOKBACK_YEARS, 'year');
 var endDate = ee.Date(Date.now());
@@ -72,19 +97,20 @@ var quakes = ee.FeatureCollection('projects/sat-io/open-datasets/USGS/usgs_earth
 
 var quakeCount = quakes.size();
 
-// Distance from point to each quake (km)
+// Distance from reference point to each quake (km)
 var quakesWithDist = quakes.map(function(f) {
   var epicenter = f.geometry();
-  var distM = point.distance(epicenter);
+  var distM = refPoint.distance(epicenter);
   return f.set('distance_km', distM.divide(1000));
 });
 
 var nearest = quakesWithDist.sort('distance_km').first();
 
 print('=== Tectonic summary ===');
+print('Geometry mode:', GEOMETRY_MODE);
 print('Earthquakes (mag >= ' + MIN_MAGNITUDE + ', last ' + LOOKBACK_YEARS + ' yr):',
       quakeCount);
-print('Nearest earthquake:', nearest);
+print('Nearest earthquake (from ref point):', nearest);
 
 // --- VIIRS thermal hotspots ---
 var thermalStart = endDate.advance(-THERMAL_LOOKBACK_DAYS, 'day');
@@ -107,9 +133,10 @@ print('Thermal hotspot pixels (VIIRS, last ' + THERMAL_LOOKBACK_DAYS + ' days):'
       thermalCount.get('Bright_ti4'));
 
 // --- Map layers ---
-Map.centerObject(point, 7);
-Map.addLayer(point, {color: 'red'}, 'Your point');
-Map.addLayer(aoi, {color: 'cyan'}, 'Earthquake search area', false);
+Map.centerObject(aoi, GEOMETRY_MODE === 'polygon' ? 6 : 7);
+Map.addLayer(aoi, {color: 'cyan'}, 'Analysis area');
+Map.addLayer(refPoint, {color: 'red'}, 'Reference point');
+Map.addLayer(point, {color: 'white'}, 'LNG/LAT (point mode only)', GEOMETRY_MODE === 'point');
 
 Map.addLayer(
   quakes,
@@ -127,17 +154,18 @@ Map.addLayer(
 
 **Expected output (Console):**
 
-- Earthquake count within buffer (often low for interior Borneo)
-- Nearest earthquake feature with `mag`, `place`, `depth`, `distance_km`
+- Earthquake count within analysis area (often low for interior Borneo)
+- Nearest earthquake feature with `mag`, `place`, `depth`, `distance_km` (from centroid in polygon mode)
 - Thermal pixel count (often correlates with fires, not volcanoes, in Kalimantan)
 
 ---
 
 ## Limitations
 
-- **Borneo seismicity is relatively low** — expand `BUFFER_KM` or lower `MIN_MAGNITUDE` to find more events.
+- **Borneo seismicity is relatively low** — expand the analysis area or lower `MIN_MAGNITUDE` to find more events.
 - **USGS dataset is community-hosted** — verify critical applications against [USGS Earthquake Catalog](https://earthquake.usgs.gov/) directly.
 - **VIIRS thermal ≠ volcano** — most hotspots in Borneo are agricultural fires or industry.
+- **Large polygons** may hit `maxPixels` limits — increase `scale` or simplify geometry if the script errors.
 - Earthquake `depth` and `mag` come from USGS catalog metadata; shallow events near coasts may have tsunami relevance (check official advisories separately).
 
 ---
