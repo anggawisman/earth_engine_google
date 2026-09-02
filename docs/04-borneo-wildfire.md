@@ -206,7 +206,7 @@ var viirsCount = viirsMask.reduceRegion({
 
 print('=== Wildfire summary ===');
 print('Analysis area: drawn polygon');
-print('Drawn area (km²):', geometry.area().divide(1e6));
+print('Drawn area (km²):', geometry.area(1).divide(1e6));
 print('Drawn bounds:', geometry.bounds());
 print('Date mode:', DATE_MODE);
 print('Date range:', dateLabel);
