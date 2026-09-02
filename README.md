@@ -24,6 +24,17 @@ node docs/examples/climate-era5.js
 | [02 — Climate, Weather & Geophysical Scripts](docs/02-scripts-climate-weather-geophysical.md) | Copy-paste scripts for ERA5, GFS, NASADEM, WorldCover |
 | [03 — Node.js Web App Integration](docs/03-nodejs-webapp-integration.md) | Backend architecture and API patterns |
 
+### Borneo Monitoring (Code Editor)
+
+| Guide | Topic |
+|-------|-------|
+| [04 — Wildfire](docs/04-borneo-wildfire.md) | FIRMS + VIIRS fire detections |
+| [05 — Deforestation](docs/05-borneo-deforestation.md) | Hansen loss + GLAD alerts |
+| [06 — Tectonic & Volcanic](docs/06-borneo-tectonic-volcanic.md) | Earthquakes + thermal hotspots |
+| [07 — Climate Change](docs/07-borneo-climate-change.md) | Decadal temperature comparison |
+| [08 — CO2 & Carbon](docs/08-borneo-co2.md) | GPP + combustion proxy |
+| [09 — Weather](docs/09-borneo-weather.md) | GFS forecast at a point |
+
 ## Example Scripts
 
 - [`docs/examples/climate-era5.js`](docs/examples/climate-era5.js) — monthly temperature at a point

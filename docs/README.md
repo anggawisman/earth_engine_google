@@ -33,6 +33,19 @@ GEE_SERVICE_ACCOUNT_KEY_PATH=./credentials/service-account-key.json
 | [03 — Node.js Web App Integration](./03-nodejs-webapp-integration.md) | Server architecture, API patterns, map tiles, security |
 | [ADR-001 — Node.js Auth Strategy](./decisions/ADR-001-earth-engine-nodejs-auth.md) | Why service-account auth lives on the server |
 
+## Borneo Monitoring (Code Editor)
+
+Copy-paste scripts for Borneo — change only longitude/latitude in each **CUSTOMIZE** block. Recommended order for immediate hazards first, then longer trends:
+
+| Doc | Topic |
+|-----|-------|
+| [09 — Weather](./09-borneo-weather.md) | GFS forecast: temperature, precipitation, wind |
+| [04 — Wildfire](./04-borneo-wildfire.md) | FIRMS + VIIRS active fire detections |
+| [05 — Deforestation](./05-borneo-deforestation.md) | Hansen forest loss + GLAD alerts |
+| [06 — Tectonic & Volcanic](./06-borneo-tectonic-volcanic.md) | USGS earthquakes + thermal hotspots |
+| [07 — Climate Change](./07-borneo-climate-change.md) | ERA5-Land decadal temperature comparison |
+| [08 — CO2 & Carbon](./08-borneo-co2.md) | MODIS GPP + CAMS CO proxy (not direct CO2 ppm) |
+
 ## Example Scripts
 
 Runnable Node.js snippets live in [`docs/examples/`](./examples/):
